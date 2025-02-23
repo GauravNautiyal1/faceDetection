@@ -115,3 +115,7 @@ async def detect_face(websocket: WebSocket):
         except Exception as e:
             print(f"Error: {e}")
             break
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))  # Default to 10000 for local, dynamic in production
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
