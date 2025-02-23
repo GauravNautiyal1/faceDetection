@@ -168,6 +168,7 @@ async def detect_face(websocket: WebSocket):
             image_bytes = base64.b64decode(data)
             image = Image.open(io.BytesIO(image_bytes))
             frame = np.array(image)
+            print("Image received from WebSocket")
 
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = face_detection.process(rgb_frame)
