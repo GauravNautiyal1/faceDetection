@@ -59,6 +59,7 @@ import numpy as np
 import base64
 import io
 from PIL import Image
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 app = FastAPI()
 
