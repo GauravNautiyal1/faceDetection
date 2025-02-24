@@ -313,6 +313,7 @@ async def detect_face(websocket: WebSocket):
 
                                 if len(result) > 0 and len(result[0]) > 0:
                                     name = result[0]["identity"][0].split("/")[-1].split(".")[0]
+                                    print(f"✅ Detected Face Name: {name}") 
                                     response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
                                 else:
                                     response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
