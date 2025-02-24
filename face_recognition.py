@@ -308,6 +308,7 @@ async def detect_face(websocket: WebSocket):
                         if face_crop.size != 0:
                             try:
                                 # ✅ DeepFace Recognition
+                                print("gaurav445566")
                                 result = DeepFace.find(face_crop, db_path="registered_faces/", model_name="ArcFace", enforce_detection=False)
                                 print("DeepFace search completed")
 
@@ -322,7 +323,8 @@ async def detect_face(websocket: WebSocket):
                                 print("DeepFace Error:", e)
                                 response["faces"].append({"name": "Recognition Error", "x": x, "y": y, "w": w, "h": h})
                         else:
-                            print("⚠️ Empty face crop detected.")
+                            response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
+                            print("Empty face crop detected.")
 
                 else:
                     print("No faces detected.")
