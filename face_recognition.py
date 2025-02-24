@@ -215,7 +215,6 @@
 
 
 
-
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
@@ -230,7 +229,11 @@ import json
 
 # ✅ Force TensorFlow to use CPU if GPU is unavailable
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
+
 import tensorflow as tf
+tf.config.set_visible_devices([], 'GPU')
 
 app = FastAPI()
 
@@ -256,7 +259,7 @@ face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 async def detect_face(websocket: WebSocket):
     await websocket.accept()
     print("WebSocket Connection Opened ✅")
-    
+
     try:
         while True:
             try:
@@ -275,11 +278,13 @@ async def detect_face(websocket: WebSocket):
                 # ✅ Convert to RGB for Mediapipe
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 results = face_detection.process(rgb_frame)
+                print("Face detection completed")
 
                 response = {"faces": []}
 
                 # ✅ Face Detection with Mediapipe
                 if results.detections:
+                    print(f"Detected {len(results.detections)} face(s)")
                     for detection in results.detections:
                         bboxC = detection.location_data.relative_bounding_box
                         height, width, _ = frame.shape
@@ -294,6 +299,7 @@ async def detect_face(websocket: WebSocket):
                             try:
                                 # ✅ DeepFace Recognition
                                 result = DeepFace.find(face_crop, db_path="registered_faces/", model_name="ArcFace", enforce_detection=False)
+                                print("DeepFace search completed")
 
                                 if len(result) > 0 and len(result[0]) > 0:
                                     name = result[0]["identity"][0].split("/")[-1].split(".")[0]
@@ -329,4 +335,3 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
-
