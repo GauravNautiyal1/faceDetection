@@ -215,7 +215,7 @@
 
 
 
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Request
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import mediapipe as mp
@@ -247,9 +247,19 @@ app.add_middleware(
 )
 
 # ✅ Root Route for Health Check
-@app.get("/")
-def read_root():
+# @app.get("/")
+# def read_root():
+#     return {"message": "Face Detection API is Running 🚀"}
+
+
+
+@app.api_route("/", methods=["GET", "HEAD"])
+def read_root(request: Request):
     return {"message": "Face Detection API is Running 🚀"}
+
+
+
+    
 
 # ✅ Mediapipe Face Detection
 mp_face_detection = mp.solutions.face_detection
