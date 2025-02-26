@@ -350,7 +350,6 @@
 #     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
 
 
-
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
@@ -381,15 +380,14 @@ app.add_middleware(
 app.include_router(attendance_router)
 app.include_router(face_registration_router)
 
-# ✅ Set Paths for Persistent Storage
-DB_PATH = "/data/attendance.db"
-FACE_DB_PATH = "/data/registered_faces"
+# ✅ Set Paths for Persistent Storage (Relative to working directory)
+BASE_DIR = os.getcwd()  # Render's working directory: /opt/render/project/src
+DB_PATH = os.path.join(BASE_DIR, "data", "attendance.db")
+FACE_DB_PATH = os.path.join(BASE_DIR, "data", "registered_faces")
 
 # ✅ Ensure Directories Exist
-if not os.path.exists("/data"):
-    os.makedirs("/data")
-if not os.path.exists(FACE_DB_PATH):
-    os.makedirs(FACE_DB_PATH)
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)  # Create 'data' directory if it doesn't exist
+os.makedirs(FACE_DB_PATH, exist_ok=True)  # Create 'data/registered_faces' if it doesn't exist
 
 # ✅ Initialize Database
 conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -461,5 +459,6 @@ async def detect_face(websocket: WebSocket):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-
+    # Use environment variable PORT for Render compatibility, default to 8000 locally
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
