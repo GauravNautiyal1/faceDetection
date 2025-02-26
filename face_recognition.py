@@ -349,7 +349,6 @@
 #     port = int(os.environ.get("PORT", 10000))
 #     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
 
-
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
@@ -405,6 +404,11 @@ conn.commit()
 mp_face_detection = mp.solutions.face_detection
 face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 
+# ✅ Health Check Endpoint
+@app.get("/")
+async def root():
+    return {"status": "OK", "message": "Face recognition server is running"}
+
 @app.websocket("/detect-face")
 async def detect_face(websocket: WebSocket):
     await websocket.accept()
@@ -456,9 +460,3 @@ async def detect_face(websocket: WebSocket):
         except Exception as e:
             print(f"Error: {e}")
             break
-
-if __name__ == "__main__":
-    import uvicorn
-    # Use environment variable PORT for Render compatibility, default to 8000 locally
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
