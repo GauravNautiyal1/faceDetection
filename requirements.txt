@@ -14,3 +14,4 @@ mtcnn>=0.1.0
 retina-face>=0.0.1
 fastapi>=0.95.0
 tf-keras>=2.18.0
+python-multipart
