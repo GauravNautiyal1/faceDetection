@@ -460,3 +460,11 @@ async def detect_face(websocket: WebSocket):
         except Exception as e:
             print(f"Error: {e}")
             break
+
+@app.get("/registered-faces/")
+async def list_registered_faces():
+    try:
+        files = os.listdir(FACE_DB_PATH)
+        return {"registered_faces": files}
+    except Exception as e:
+        return {"registered_faces": [], "error": str(e)}
