@@ -215,7 +215,143 @@
 
 
 
-from fastapi import FastAPI, WebSocket, Request
+# from fastapi import FastAPI, WebSocket, Request
+# from fastapi.middleware.cors import CORSMiddleware
+# import cv2
+# import mediapipe as mp
+# from deepface import DeepFace
+# import numpy as np
+# import base64
+# import io
+# from PIL import Image
+# import os
+# import json
+
+# # ✅ Force TensorFlow to use CPU if GPU is unavailable
+# os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+# os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+# os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
+
+# import tensorflow as tf
+# tf.config.set_visible_devices([], 'GPU')
+
+# app = FastAPI()
+
+# # ✅ CORS Configuration
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],  # Replace "*" with frontend domain in production
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+# # ✅ Root Route for Health Check
+# # @app.get("/")
+# # def read_root():
+# #     return {"message": "Face Detection API is Running 🚀"}
+
+
+
+# @app.api_route("/", methods=["GET", "HEAD"])
+# def read_root(request: Request):
+#     return {"message": "Face Detection API is Running 🚀"}
+
+
+
+    
+
+# # ✅ Mediapipe Face Detection
+# mp_face_detection = mp.solutions.face_detection
+# face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
+
+# @app.websocket("/detect-face")
+# async def detect_face(websocket: WebSocket):
+#     await websocket.accept()
+#     print("WebSocket Connection Opened ✅")
+
+#     try:
+#         while True:
+#             try:
+#                 data = await websocket.receive_text()
+
+#                 # ✅ Decode Base64 image
+#                 image_bytes = base64.b64decode(data)
+#                 image = Image.open(io.BytesIO(image_bytes))
+#                 frame = np.array(image)
+#                 print("Image received from WebSocket")
+
+#                 if frame.size == 0:
+#                     print("⚠️ Received empty frame.")
+#                     continue
+
+#                 # ✅ Convert to RGB for Mediapipe
+#                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+#                 results = face_detection.process(rgb_frame)
+#                 print("Face detection completed")
+
+#                 response = {"faces": []}
+
+#                 # ✅ Face Detection with Mediapipe
+#                 if results.detections:
+#                     print(f"Detected {len(results.detections)} face(s)")
+#                     for detection in results.detections:
+#                         bboxC = detection.location_data.relative_bounding_box
+#                         height, width, _ = frame.shape
+#                         x = int(bboxC.xmin * width)
+#                         y = int(bboxC.ymin * height)
+#                         w = int(bboxC.width * width)
+#                         h = int(bboxC.height * height)
+
+#                         face_crop = frame[y:y+h, x:x+w]
+
+#                         if face_crop.size != 0:
+#                             try:
+#                                 # ✅ DeepFace Recognition
+#                                 print("gaurav445566")
+#                                 result = DeepFace.find(face_crop, db_path="registered_faces/", model_name="ArcFace", enforce_detection=False)
+#                                 print("DeepFace search completed")
+
+#                                 if len(result) > 0 and len(result[0]) > 0:
+#                                     name = result[0]["identity"][0].split("/")[-1].split(".")[0]
+#                                     print(f"✅ Detected Face Name: {name}") 
+#                                     response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
+#                                 else:
+#                                     response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
+
+#                             except Exception as e:
+#                                 print("DeepFace Error:", e)
+#                                 response["faces"].append({"name": "Recognition Error", "x": x, "y": y, "w": w, "h": h})
+#                         else:
+#                             response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
+#                             print("Empty face crop detected.")
+
+#                 else:
+#                     print("No faces detected.")
+
+#                 # ✅ Send response to WebSocket
+#                 await websocket.send_json(response)
+#                 print("Sent Response:", response)
+
+#             except Exception as e:
+#                 print(f"WebSocket Error: {e}")
+#                 error_response = {"error": str(e)}
+#                 await websocket.send_json(error_response)
+
+#     except Exception as outer_error:
+#         print(f"WebSocket Closed due to Error: {outer_error}")
+#     finally:
+#         await websocket.close()
+#         print("WebSocket Connection Closed ❌")
+
+# if __name__ == "__main__":
+#     import uvicorn
+#     port = int(os.environ.get("PORT", 10000))
+#     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
+
+
+
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import mediapipe as mp
@@ -223,43 +359,49 @@ from deepface import DeepFace
 import numpy as np
 import base64
 import io
-from PIL import Image
+import sqlite3
 import os
-import json
-
-# ✅ Force TensorFlow to use CPU if GPU is unavailable
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
-
-import tensorflow as tf
-tf.config.set_visible_devices([], 'GPU')
+from datetime import datetime
+from PIL import Image
+from attendance_api import router as attendance_router
+from face_registration_api import router as face_registration_router
 
 app = FastAPI()
 
 # ✅ CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace "*" with frontend domain in production
+    allow_origins=["*"],  # Replace "*" with your frontend domain in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ✅ Root Route for Health Check
-# @app.get("/")
-# def read_root():
-#     return {"message": "Face Detection API is Running 🚀"}
+# ✅ Include Routers
+app.include_router(attendance_router)
+app.include_router(face_registration_router)
 
+# ✅ Set Paths for Persistent Storage
+DB_PATH = "/data/attendance.db"
+FACE_DB_PATH = "/data/registered_faces"
 
+# ✅ Ensure Directories Exist
+if not os.path.exists("/data"):
+    os.makedirs("/data")
+if not os.path.exists(FACE_DB_PATH):
+    os.makedirs(FACE_DB_PATH)
 
-@app.api_route("/", methods=["GET", "HEAD"])
-def read_root(request: Request):
-    return {"message": "Face Detection API is Running 🚀"}
-
-
-
-    
+# ✅ Initialize Database
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute(
+    """CREATE TABLE IF NOT EXISTS attendance (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        date TEXT
+    )"""
+)
+conn.commit()
 
 # ✅ Mediapipe Face Detection
 mp_face_detection = mp.solutions.face_detection
@@ -268,83 +410,56 @@ face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 @app.websocket("/detect-face")
 async def detect_face(websocket: WebSocket):
     await websocket.accept()
-    print("WebSocket Connection Opened ✅")
+    while True:
+        try:
+            data = await websocket.receive_text()
+            image_bytes = base64.b64decode(data)
+            image = Image.open(io.BytesIO(image_bytes))
+            frame = np.array(image)
 
-    try:
-        while True:
-            try:
-                data = await websocket.receive_text()
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = face_detection.process(rgb_frame)
 
-                # ✅ Decode Base64 image
-                image_bytes = base64.b64decode(data)
-                image = Image.open(io.BytesIO(image_bytes))
-                frame = np.array(image)
-                print("Image received from WebSocket")
+            response = {"faces": []}
+            today_date = datetime.today().strftime('%Y-%m-%d')
 
-                if frame.size == 0:
-                    print("⚠️ Received empty frame.")
-                    continue
+            if results.detections:
+                for detection in results.detections:
+                    bboxC = detection.location_data.relative_bounding_box
+                    h, w, _ = frame.shape
+                    x, y, w, h = int(bboxC.xmin * w), int(bboxC.ymin * h), int(bboxC.width * w), int(bboxC.height * h)
 
-                # ✅ Convert to RGB for Mediapipe
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = face_detection.process(rgb_frame)
-                print("Face detection completed")
+                    face_crop = frame[y:y+h, x:x+w]
 
-                response = {"faces": []}
+                    try:
+                        result = DeepFace.find(face_crop, db_path=FACE_DB_PATH, model_name="ArcFace", enforce_detection=False)
 
-                # ✅ Face Detection with Mediapipe
-                if results.detections:
-                    print(f"Detected {len(results.detections)} face(s)")
-                    for detection in results.detections:
-                        bboxC = detection.location_data.relative_bounding_box
-                        height, width, _ = frame.shape
-                        x = int(bboxC.xmin * width)
-                        y = int(bboxC.ymin * height)
-                        w = int(bboxC.width * width)
-                        h = int(bboxC.height * height)
+                        if len(result) > 0 and len(result[0]) > 0:
+                            name = result[0]["identity"][0].split("/")[-1].split(".")[0]
+                            
+                            # ✅ Check if already marked today
+                            cursor.execute("SELECT * FROM attendance WHERE name = ? AND date = ?", (name, today_date))
+                            existing_entry = cursor.fetchone()
 
-                        face_crop = frame[y:y+h, x:x+w]
+                            if not existing_entry:
+                                cursor.execute("INSERT INTO attendance (name, date) VALUES (?, ?)", (name, today_date))
+                                conn.commit()
+                                print(f"✅ Attendance marked for {name} on {today_date}")
 
-                        if face_crop.size != 0:
-                            try:
-                                # ✅ DeepFace Recognition
-                                print("gaurav445566")
-                                result = DeepFace.find(face_crop, db_path="registered_faces/", model_name="ArcFace", enforce_detection=False)
-                                print("DeepFace search completed")
-
-                                if len(result) > 0 and len(result[0]) > 0:
-                                    name = result[0]["identity"][0].split("/")[-1].split(".")[0]
-                                    print(f"✅ Detected Face Name: {name}") 
-                                    response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
-                                else:
-                                    response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
-
-                            except Exception as e:
-                                print("DeepFace Error:", e)
-                                response["faces"].append({"name": "Recognition Error", "x": x, "y": y, "w": w, "h": h})
-                        else:
                             response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
-                            print("Empty face crop detected.")
+                        else:
+                            response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
 
-                else:
-                    print("No faces detected.")
+                    except Exception as e:
+                        print("Error:", e)
 
-                # ✅ Send response to WebSocket
-                await websocket.send_json(response)
-                print("Sent Response:", response)
+            await websocket.send_json(response)
 
-            except Exception as e:
-                print(f"WebSocket Error: {e}")
-                error_response = {"error": str(e)}
-                await websocket.send_json(error_response)
-
-    except Exception as outer_error:
-        print(f"WebSocket Closed due to Error: {outer_error}")
-    finally:
-        await websocket.close()
-        print("WebSocket Connection Closed ❌")
+        except Exception as e:
+            print(f"Error: {e}")
+            break
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
