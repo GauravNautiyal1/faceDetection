@@ -357,16 +357,21 @@ from deepface import DeepFace
 import numpy as np
 import base64
 import io
-import sqlite3
 import os
+import logging
 from datetime import datetime
 from PIL import Image
 from attendance_api import router as attendance_router
 from face_registration_api import router as face_registration_router
+from db import FACE_DB_PATH, conn, cursor, init_db
 
 app = FastAPI()
 
-# ✅ CORS Configuration
+# Logging setup (optional, for debugging)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Replace "*" with your frontend domain in production
@@ -375,36 +380,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Include Routers
+# Include Routers
 app.include_router(attendance_router)
 app.include_router(face_registration_router)
 
-# ✅ Set Paths for Persistent Storage (Relative to working directory)
-BASE_DIR = os.getcwd()  # Render's working directory: /opt/render/project/src
-DB_PATH = os.path.join(BASE_DIR, "data", "attendance.db")
-FACE_DB_PATH = os.path.join(BASE_DIR, "data", "registered_faces")
+# Initialize Database
+init_db()
 
-# ✅ Ensure Directories Exist
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)  # Create 'data' directory if it doesn't exist
-os.makedirs(FACE_DB_PATH, exist_ok=True)  # Create 'data/registered_faces' if it doesn't exist
-
-# ✅ Initialize Database
-conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute(
-    """CREATE TABLE IF NOT EXISTS attendance (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        date TEXT
-    )"""
-)
-conn.commit()
-
-# ✅ Mediapipe Face Detection
+# Mediapipe Face Detection
 mp_face_detection = mp.solutions.face_detection
 face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 
-# ✅ Health Check Endpoint
 @app.get("/")
 async def root():
     return {"status": "OK", "message": "Face recognition server is running"}
@@ -439,32 +425,34 @@ async def detect_face(websocket: WebSocket):
                         if len(result) > 0 and len(result[0]) > 0:
                             name = result[0]["identity"][0].split("/")[-1].split(".")[0]
                             
-                            # ✅ Check if already marked today
                             cursor.execute("SELECT * FROM attendance WHERE name = ? AND date = ?", (name, today_date))
                             existing_entry = cursor.fetchone()
 
                             if not existing_entry:
                                 cursor.execute("INSERT INTO attendance (name, date) VALUES (?, ?)", (name, today_date))
                                 conn.commit()
-                                print(f"✅ Attendance marked for {name} on {today_date}")
+                                logger.info(f"Attendance marked for {name} on {today_date}")
 
                             response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
                         else:
                             response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
 
                     except Exception as e:
-                        print("Error:", e)
+                        logger.error(f"Error in face detection: {e}")
 
             await websocket.send_json(response)
 
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error(f"WebSocket error: {e}")
             break
 
 @app.get("/registered-faces/")
 async def list_registered_faces():
+    logger.info(f"Listing files in {FACE_DB_PATH}")
     try:
         files = os.listdir(FACE_DB_PATH)
+        logger.info(f"Found files: {files}")
         return {"registered_faces": files}
     except Exception as e:
+        logger.error(f"Error listing files: {e}")
         return {"registered_faces": [], "error": str(e)}
