@@ -348,6 +348,8 @@
 #     import uvicorn
 #     port = int(os.environ.get("PORT", 10000))
 #     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
+
+
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
@@ -379,11 +381,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include Routers
 app.include_router(attendance_router)
 app.include_router(face_registration_router)
 
-# Mediapipe Face Detection
 mp_face_detection = mp.solutions.face_detection
 face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 
@@ -401,6 +401,8 @@ async def detect_face(websocket: WebSocket):
             image = Image.open(io.BytesIO(image_bytes))
             frame = np.array(image)
 
+            logger.info(f"Received frame: {frame.shape}")
+
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = face_detection.process(rgb_frame)
 
@@ -408,15 +410,25 @@ async def detect_face(websocket: WebSocket):
             today_date = datetime.today().strftime('%Y-%m-%d')
 
             if results.detections:
+                logger.info(f"Detected {len(results.detections)} faces")
                 for detection in results.detections:
                     bboxC = detection.location_data.relative_bounding_box
                     h, w, _ = frame.shape
                     x, y, w, h = int(bboxC.xmin * w), int(bboxC.ymin * h), int(bboxC.width * w), int(bboxC.height * h)
 
+                    # Ensure bounding box is within frame
+                    x, y = max(0, x), max(0, y)
+                    w, h = min(w, frame.shape[1] - x), min(h, frame.shape[0] - y)
+                    if w <= 0 or h <= 0:
+                        logger.warning(f"Invalid bounding box: x={x}, y={y}, w={w}, h={h}")
+                        continue
+
                     face_crop = frame[y:y+h, x:x+w]
+                    logger.info(f"Face crop shape: {face_crop.shape}")
 
                     try:
                         result = DeepFace.find(face_crop, db_path=FACE_DB_PATH, model_name="ArcFace", enforce_detection=False)
+                        logger.info(f"DeepFace result: {result}")
 
                         if len(result) > 0 and len(result[0]) > 0:
                             name = result[0]["identity"][0].split("/")[-1].split(".")[0]
@@ -431,11 +443,16 @@ async def detect_face(websocket: WebSocket):
 
                             response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
                         else:
+                            logger.info("No match found in DeepFace database")
                             response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
 
                     except Exception as e:
                         logger.error(f"Error in face detection: {e}")
 
+            else:
+                logger.info("No faces detected by MediaPipe")
+
+            logger.info(f"Sending response: {response}")
             await websocket.send_json(response)
 
         except Exception as e:
