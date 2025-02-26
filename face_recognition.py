@@ -348,7 +348,6 @@
 #     import uvicorn
 #     port = int(os.environ.get("PORT", 10000))
 #     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
-
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
@@ -363,11 +362,11 @@ from datetime import datetime
 from PIL import Image
 from attendance_api import router as attendance_router
 from face_registration_api import router as face_registration_router
-from db import FACE_DB_PATH, conn, cursor, init_db
+from db import FACE_DB_PATH, conn, cursor
 
 app = FastAPI()
 
-# Logging setup (optional, for debugging)
+# Logging setup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -383,9 +382,6 @@ app.add_middleware(
 # Include Routers
 app.include_router(attendance_router)
 app.include_router(face_registration_router)
-
-# Initialize Database
-init_db()
 
 # Mediapipe Face Detection
 mp_face_detection = mp.solutions.face_detection
