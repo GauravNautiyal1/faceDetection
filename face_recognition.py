@@ -500,19 +500,29 @@ from deepface import DeepFace
 import numpy as np
 import base64
 import io
-import os
 import logging
 from datetime import datetime
 from PIL import Image
 from attendance_api import router as attendance_router
 from face_registration_api import router as face_registration_router
 from db import FACE_DB_PATH, conn, cursor
+import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
+os.environ.pop("TF_FORCE_GPU_ALLOW_GROWTH", None)
 
 import tensorflow as tf
-tf.config.set_visible_devices([], 'GPU')
+physical_devices = tf.config.list_physical_devices('GPU')
+if physical_devices:
+    tf.config.set_visible_devices([], 'GPU')
+    logger.info("GPU disabled successfully")
+else:
+    logger.info("No GPU detected, running on CPU")
 app = FastAPI()
 
 logging.basicConfig(level=logging.INFO)
@@ -531,13 +541,27 @@ app.include_router(face_registration_router)
 
 def initialize_deepface_db():
     try:
-        if os.path.exists(FACE_DB_PATH) and any(f.endswith(('.jpg', '.png')) for f in os.listdir(FACE_DB_PATH)):
-            logger.info(f"Building DeepFace database from {FACE_DB_PATH}")
-            # Use a dummy image to trigger database build
-            DeepFace.find(np.zeros((100, 100, 3)), db_path=FACE_DB_PATH, model_name="ArcFace", enforce_detection=False)
-            logger.info("DeepFace database initialized")
-        else:
-            logger.warning(f"No valid images found in {FACE_DB_PATH} to build database")
+        dir_path = FACE_DB_PATH
+        files = os.listdir(dir_path)
+        logger.info(f"Files in {dir_path}: {files}")
+        image_files = [f for f in files if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
+        logger.info(f"Valid image files: {image_files}")
+
+        if not image_files:
+            logger.warning(f"No valid image files found in {dir_path} to build database")
+            return
+
+        # Pre-build representations for all images
+        logger.info(f"Building DeepFace database from {dir_path}")
+        for img_file in image_files:
+            img_path = os.path.join(dir_path, img_file)
+            img = cv2.imread(img_path)
+            if img is None:
+                logger.error(f"Failed to load image: {img_path}")
+                continue
+            DeepFace.represent(img, model_name="ArcFace", enforce_detection=False)  # Precompute representations
+        DeepFace.find(np.zeros((100, 100, 3)), db_path=dir_path, model_name="ArcFace", enforce_detection=False)  # Trigger database save
+        logger.info("DeepFace database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize DeepFace database: {e}")
 
@@ -555,10 +579,10 @@ async def root():
 async def rebuild_deepface_db():
     initialize_deepface_db()
     return {"message": "DeepFace database rebuild attempted"}
-
 @app.websocket("/detect-face")
 async def detect_face(websocket: WebSocket):
     await websocket.accept()
+    logger.info("WebSocket connection opened")
     while True:
         try:
             data = await websocket.receive_text()
@@ -567,11 +591,10 @@ async def detect_face(websocket: WebSocket):
             frame = np.array(image)
 
             logger.info(f"Received frame: {frame.shape}")
-
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = face_detection.process(rgb_frame)
 
-            response = {"faces": []}
+            response = {"status": "success", "faces": []}
             today_date = datetime.today().strftime('%Y-%m-%d')
 
             if results.detections:
@@ -591,43 +614,42 @@ async def detect_face(websocket: WebSocket):
                     logger.info(f"Face crop shape: {face_crop.shape}")
 
                     try:
-                        if not os.path.exists(os.path.join(FACE_DB_PATH, "representations_arcface.pkl")):
-                            logger.warning("No DeepFace database found, rebuilding...")
-                            initialize_deepface_db()
-
-                        result = DeepFace.find(face_crop, db_path=FACE_DB_PATH, model_name="ArcFace", enforce_detection=False)
-                        logger.info(f"DeepFace result: {result}")
-
-                        if isinstance(result, list) and len(result) > 0 and len(result[0]) > 0:
-                            name = result[0]["identity"][0].split("/")[-1].split(".")[0]
-                            
-                            cursor.execute("SELECT * FROM attendance WHERE name = ? AND date = ?", (name, today_date))
-                            existing_entry = cursor.fetchone()
-
-                            if not existing_entry:
-                                cursor.execute("INSERT INTO attendance (name, date) VALUES (?, ?)", (name, today_date))
-                                conn.commit()
-                                logger.info(f"Attendance marked for {name} on {today_date}")
-
-                            response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
-                        else:
-                            logger.info("No match found in DeepFace database")
+                        db_files = [f for f in os.listdir(FACE_DB_PATH) if f.endswith(('.jpg', '.png', '.jpeg'))]
+                        if not db_files:
+                            logger.warning("No registered faces in database")
                             response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
+                        else:
+                            result = DeepFace.find(face_crop, db_path=FACE_DB_PATH, model_name="ArcFace", enforce_detection=False)
+                            logger.info(f"DeepFace result: {result}")
+
+                            if isinstance(result, list) and result and not result[0].empty:
+                                name = result[0]["identity"].iloc[0].split("/")[-1].split(".")[0]
+                                cursor.execute("SELECT * FROM attendance WHERE name = ? AND date = ?", (name, today_date))
+                                if not cursor.fetchone():
+                                    cursor.execute("INSERT INTO attendance (name, date) VALUES (?, ?)", (name, today_date))
+                                    conn.commit()
+                                    logger.info(f"Attendance marked for {name} on {today_date}")
+                                response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
+                            else:
+                                logger.info("No match found in DeepFace database")
+                                response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
 
                     except Exception as e:
-                        logger.error(f"Error in face detection: {e}")
+                        logger.error(f"Recognition error: {e}")
                         response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
 
             else:
                 logger.info("No faces detected by MediaPipe")
+                response["status"] = "success"
+                response["faces"] = []
 
             logger.info(f"Sending response: {response}")
             await websocket.send_json(response)
 
         except Exception as e:
             logger.error(f"WebSocket error: {e}")
+            await websocket.send_json({"status": "error", "message": str(e)})
             break
-
 @app.get("/registered-faces/")
 async def list_registered_faces():
     logger.info(f"Listing files in {FACE_DB_PATH}")
