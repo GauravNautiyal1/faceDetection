@@ -350,6 +350,148 @@
 #     uvicorn.run("app:app", host="0.0.0.0", port=port, reload=True)
 
 
+# from fastapi import FastAPI, WebSocket
+# from fastapi.middleware.cors import CORSMiddleware
+# import cv2
+# import mediapipe as mp
+# from deepface import DeepFace
+# import numpy as np
+# import base64
+# import io
+# import os
+# import logging
+# from datetime import datetime
+# from PIL import Image
+# from attendance_api import router as attendance_router
+# from face_registration_api import router as face_registration_router
+# from db import FACE_DB_PATH, conn, cursor
+
+# app = FastAPI()
+
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
+# app.include_router(attendance_router)
+# app.include_router(face_registration_router)
+
+# # Prebuild DeepFace database on startup
+# def initialize_deepface_db():
+#     try:
+#         if os.path.exists(FACE_DB_PATH) and os.listdir(FACE_DB_PATH):
+#             logger.info(f"Building DeepFace database from {FACE_DB_PATH}")
+#             DeepFace.represent(img_path=os.path.join(FACE_DB_PATH, "*.jpg"), model_name="ArcFace", enforce_detection=False)
+#             logger.info("DeepFace database initialized")
+#         else:
+#             logger.warning(f"No images found in {FACE_DB_PATH} to build database")
+#     except Exception as e:
+#         logger.error(f"Failed to initialize DeepFace database: {e}")
+
+# # Initialize on startup
+# initialize_deepface_db()
+
+# mp_face_detection = mp.solutions.face_detection
+# face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
+
+# @app.get("/")
+# async def root():
+#     return {"status": "OK", "message": "Face recognition server is running"}
+
+# @app.websocket("/detect-face")
+# async def detect_face(websocket: WebSocket):
+#     await websocket.accept()
+#     while True:
+#         try:
+#             data = await websocket.receive_text()
+#             image_bytes = base64.b64decode(data)
+#             image = Image.open(io.BytesIO(image_bytes))
+#             frame = np.array(image)
+
+#             logger.info(f"Received frame: {frame.shape}")
+
+#             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+#             results = face_detection.process(rgb_frame)
+
+#             response = {"faces": []}
+#             today_date = datetime.today().strftime('%Y-%m-%d')
+
+#             if results.detections:
+#                 logger.info(f"Detected {len(results.detections)} faces")
+#                 for detection in results.detections:
+#                     bboxC = detection.location_data.relative_bounding_box
+#                     h, w, _ = frame.shape
+#                     x, y, w, h = int(bboxC.xmin * w), int(bboxC.ymin * h), int(bboxC.width * w), int(bboxC.height * h)
+
+#                     x, y = max(0, x), max(0, y)
+#                     w, h = min(w, frame.shape[1] - x), min(h, frame.shape[0] - y)
+#                     if w <= 0 or h <= 0:
+#                         logger.warning(f"Invalid bounding box: x={x}, y={y}, w={w}, h={h}")
+#                         continue
+
+#                     face_crop = frame[y:y+h, x:x+w]
+#                     logger.info(f"Face crop shape: {face_crop.shape}")
+
+#                     try:
+#                         # Ensure database exists before finding
+#                         if not os.path.exists(os.path.join(FACE_DB_PATH, "representations_arcface.pkl")):
+#                             logger.warning("No DeepFace database found, rebuilding...")
+#                             initialize_deepface_db()
+
+#                         result = DeepFace.find(face_crop, db_path=FACE_DB_PATH, model_name="ArcFace", enforce_detection=False)
+#                         logger.info(f"DeepFace result: {result}")
+
+#                         if isinstance(result, list) and len(result) > 0 and len(result[0]) > 0:
+#                             name = result[0]["identity"][0].split("/")[-1].split(".")[0]
+                            
+#                             cursor.execute("SELECT * FROM attendance WHERE name = ? AND date = ?", (name, today_date))
+#                             existing_entry = cursor.fetchone()
+
+#                             if not existing_entry:
+#                                 cursor.execute("INSERT INTO attendance (name, date) VALUES (?, ?)", (name, today_date))
+#                                 conn.commit()
+#                                 logger.info(f"Attendance marked for {name} on {today_date}")
+
+#                             response["faces"].append({"name": name, "x": x, "y": y, "w": w, "h": h})
+#                         else:
+#                             logger.info("No match found in DeepFace database")
+#                             response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
+
+#                     except Exception as e:
+#                         logger.error(f"Error in face detection: {e}")
+#                         response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})  # Fallback
+
+#             else:
+#                 logger.info("No faces detected by MediaPipe")
+
+#             logger.info(f"Sending response: {response}")
+#             await websocket.send_json(response)
+
+#         except Exception as e:
+#             logger.error(f"WebSocket error: {e}")
+#             break
+
+# @app.get("/registered-faces/")
+# async def list_registered_faces():
+#     logger.info(f"Listing files in {FACE_DB_PATH}")
+#     try:
+#         files = os.listdir(FACE_DB_PATH)
+#         logger.info(f"Found files: {files}")
+#         return {"registered_faces": files}
+#     except Exception as e:
+#         logger.error(f"Error listing files: {e}")
+#         return {"registered_faces": [], "error": str(e)}
+
+
+
+# .............................................................
+
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import cv2
@@ -382,19 +524,19 @@ app.add_middleware(
 app.include_router(attendance_router)
 app.include_router(face_registration_router)
 
-# Prebuild DeepFace database on startup
 def initialize_deepface_db():
     try:
-        if os.path.exists(FACE_DB_PATH) and os.listdir(FACE_DB_PATH):
+        if os.path.exists(FACE_DB_PATH) and any(f.endswith(('.jpg', '.png')) for f in os.listdir(FACE_DB_PATH)):
             logger.info(f"Building DeepFace database from {FACE_DB_PATH}")
-            DeepFace.represent(img_path=os.path.join(FACE_DB_PATH, "*.jpg"), model_name="ArcFace", enforce_detection=False)
+            # Use a dummy image to trigger database build
+            DeepFace.find(np.zeros((100, 100, 3)), db_path=FACE_DB_PATH, model_name="ArcFace", enforce_detection=False)
             logger.info("DeepFace database initialized")
         else:
-            logger.warning(f"No images found in {FACE_DB_PATH} to build database")
+            logger.warning(f"No valid images found in {FACE_DB_PATH} to build database")
     except Exception as e:
         logger.error(f"Failed to initialize DeepFace database: {e}")
 
-# Initialize on startup
+# Run at startup (optional, may not find images yet)
 initialize_deepface_db()
 
 mp_face_detection = mp.solutions.face_detection
@@ -403,6 +545,11 @@ face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 @app.get("/")
 async def root():
     return {"status": "OK", "message": "Face recognition server is running"}
+
+@app.get("/rebuild-deepface-db/")
+async def rebuild_deepface_db():
+    initialize_deepface_db()
+    return {"message": "DeepFace database rebuild attempted"}
 
 @app.websocket("/detect-face")
 async def detect_face(websocket: WebSocket):
@@ -439,7 +586,6 @@ async def detect_face(websocket: WebSocket):
                     logger.info(f"Face crop shape: {face_crop.shape}")
 
                     try:
-                        # Ensure database exists before finding
                         if not os.path.exists(os.path.join(FACE_DB_PATH, "representations_arcface.pkl")):
                             logger.warning("No DeepFace database found, rebuilding...")
                             initialize_deepface_db()
@@ -465,7 +611,7 @@ async def detect_face(websocket: WebSocket):
 
                     except Exception as e:
                         logger.error(f"Error in face detection: {e}")
-                        response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})  # Fallback
+                        response["faces"].append({"name": "Unknown", "x": x, "y": y, "w": w, "h": h})
 
             else:
                 logger.info("No faces detected by MediaPipe")
