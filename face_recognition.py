@@ -507,7 +507,12 @@ from PIL import Image
 from attendance_api import router as attendance_router
 from face_registration_api import router as face_registration_router
 from db import FACE_DB_PATH, conn, cursor
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_FORCE_GPU_ALLOW_GROWTH"] = "false"
 
+import tensorflow as tf
+tf.config.set_visible_devices([], 'GPU')
 app = FastAPI()
 
 logging.basicConfig(level=logging.INFO)
