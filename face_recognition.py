@@ -311,6 +311,7 @@ cloudinary.config(
     api_secret="Q9wTwNqswx9M8YxsbLxjpfyAONA"
 )
 @app.get("/")
+@app.head("/")
 async def root():
     return {"message": "Face Recognition API is running!"}
 # ✅ Get all registered faces from Cloudinary
@@ -326,15 +327,98 @@ def get_registered_faces(branch, semester):
         print(f"⚠️ Error fetching registered faces from Cloudinary: {e}")
         return {}
 
+# @app.websocket("/detect-face/{branch}/{semester}")
+# async def detect_face(websocket: WebSocket, branch: str, semester: str):
+#     await websocket.accept()
+#     while True:
+#         try:
+#             data = await websocket.receive_text()
+#             image_bytes = base64.b64decode(data)
+#             image = Image.open(io.BytesIO(image_bytes))
+
+#             frame = np.array(image.convert("RGB"))
+#             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+#             results = face_detection.process(rgb_frame)
+
+#             face_response = {"faces": []}
+#             today_date = datetime.today().strftime('%Y-%m-%d')
+
+#             if results.detections:
+#                 # ✅ Fetch only the relevant branch & semester data
+#                 registered_faces = get_registered_faces(branch, semester)
+#                 print(f"📂 Cloudinary Registered Faces ({branch} - {semester}): {registered_faces}")
+
+#                 for detection in results.detections:
+#                     bboxC = detection.location_data.relative_bounding_box
+#                     h, w, _ = frame.shape
+#                     x = max(0, int(bboxC.xmin * w))
+#                     y = max(0, int(bboxC.ymin * h))
+#                     width = max(0, int(bboxC.width * w))
+#                     height = max(0, int(bboxC.height * h))
+
+#                     face_crop = frame[y:y+height, x:x+width]
+
+#                     if face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
+#                         print("⚠️ Skipping face - invalid crop size")
+#                         continue
+
+#                     try:
+#                         # ✅ Compare only against filtered student faces
+#                         matched_name = "Unknown"
+#                         for name, image_url in registered_faces.items():
+#                             ref_image_response = requests.get(image_url)
+#                             if ref_image_response.status_code == 200:
+#                                 ref_image = np.array(Image.open(io.BytesIO(ref_image_response.content)).convert("RGB"))
+#                                 ref_image = cv2.cvtColor(ref_image, cv2.COLOR_RGB2BGR)
+
+#                                 verification = DeepFace.verify(face_crop, ref_image, model_name="ArcFace", enforce_detection=False)
+
+#                                 if isinstance(verification, dict) and verification.get("verified", False):
+#                                     matched_name = name
+#                                     print(f"✅ Recognized as: {matched_name}")
+#                                     break
+
+#                         # ✅ Mark attendance if recognized
+#                         if matched_name != "Unknown":
+#                             cursor.execute("SELECT * FROM attendance WHERE name = ? AND date = ?", (matched_name, today_date))
+#                             existing_entry = cursor.fetchone()
+
+#                             if not existing_entry:
+#                                 cursor.execute("INSERT INTO attendance (name, date) VALUES (?, ?)", (matched_name, today_date))
+#                                 conn.commit()
+#                                 print(f"✅ Attendance marked for {matched_name} on {today_date}")
+
+#                         face_response["faces"].append({
+#                             "name": matched_name,
+#                             "x": int(x),
+#                             "y": int(y),
+#                             "w": int(width),
+#                             "h": int(height)
+#                         })
+
+#                     except Exception as e:
+#                         print(f"⚠️ Face Recognition Error: {e}")
+
+#             await websocket.send_text(json.dumps(face_response, default=str))
+
+#         except Exception as e:
+#             print(f"⚠️ WebSocket Error: {e}")
+#             await websocket.send_text(json.dumps({"error": str(e)}, default=str))
+
 @app.websocket("/detect-face/{branch}/{semester}")
 async def detect_face(websocket: WebSocket, branch: str, semester: str):
     await websocket.accept()
     while True:
         try:
             data = await websocket.receive_text()
-            image_bytes = base64.b64decode(data)
-            image = Image.open(io.BytesIO(image_bytes))
+            try:
+                image_bytes = base64.b64decode(data)
+            except base64.binascii.Error as e:
+                print(f"⚠️ Invalid base64 data: {e}")
+                await websocket.send_text(json.dumps({"error": "Invalid image data"}))
+                continue
 
+            image = Image.open(io.BytesIO(image_bytes))
             frame = np.array(image.convert("RGB"))
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             results = face_detection.process(rgb_frame)
@@ -343,7 +427,6 @@ async def detect_face(websocket: WebSocket, branch: str, semester: str):
             today_date = datetime.today().strftime('%Y-%m-%d')
 
             if results.detections:
-                # ✅ Fetch only the relevant branch & semester data
                 registered_faces = get_registered_faces(branch, semester)
                 print(f"📂 Cloudinary Registered Faces ({branch} - {semester}): {registered_faces}")
 
@@ -356,53 +439,49 @@ async def detect_face(websocket: WebSocket, branch: str, semester: str):
                     height = max(0, int(bboxC.height * h))
 
                     face_crop = frame[y:y+height, x:x+width]
-
-                    if face_crop.shape[0] == 0 or face_crop.shape[1] == 0:
+                    if face_crop.size == 0:
                         print("⚠️ Skipping face - invalid crop size")
                         continue
 
-                    try:
-                        # ✅ Compare only against filtered student faces
-                        matched_name = "Unknown"
-                        for name, image_url in registered_faces.items():
-                            ref_image_response = requests.get(image_url)
-                            if ref_image_response.status_code == 200:
-                                ref_image = np.array(Image.open(io.BytesIO(ref_image_response.content)).convert("RGB"))
-                                ref_image = cv2.cvtColor(ref_image, cv2.COLOR_RGB2BGR)
+                    matched_name = "Unknown"
+                    for name, image_url in registered_faces.items():
+                        ref_image_response = requests.get(image_url)
+                        if ref_image_response.status_code == 200:
+                            ref_image = np.array(Image.open(io.BytesIO(ref_image_response.content)).convert("RGB"))
+                            ref_image = cv2.cvtColor(ref_image, cv2.COLOR_RGB2BGR)
 
-                                verification = DeepFace.verify(face_crop, ref_image, model_name="ArcFace", enforce_detection=False)
+                            if ref_image.size > 0 and face_crop.size > 0:
+                                try:
+                                    verification = DeepFace.verify(face_crop, ref_image, model_name="ArcFace", enforce_detection=False)
+                                    if isinstance(verification, dict) and verification.get("verified", False):
+                                        matched_name = name
+                                        print(f"✅ Recognized as: {matched_name}")
+                                        break
+                                except Exception as e:
+                                    print(f"⚠️ DeepFace verification failed for {name}: {e}")
 
-                                if isinstance(verification, dict) and verification.get("verified", False):
-                                    matched_name = name
-                                    print(f"✅ Recognized as: {matched_name}")
-                                    break
+                    if matched_name != "Unknown":
+                        cursor.execute("SELECT * FROM attendance WHERE name = ? AND date = ?", (matched_name, today_date))
+                        if not cursor.fetchone():
+                            cursor.execute("INSERT INTO attendance (name, date) VALUES (?, ?)", (matched_name, today_date))
+                            conn.commit()
+                            print(f"✅ Attendance marked for {matched_name} on {today_date}")
 
-                        # ✅ Mark attendance if recognized
-                        if matched_name != "Unknown":
-                            cursor.execute("SELECT * FROM attendance WHERE name = ? AND date = ?", (matched_name, today_date))
-                            existing_entry = cursor.fetchone()
-
-                            if not existing_entry:
-                                cursor.execute("INSERT INTO attendance (name, date) VALUES (?, ?)", (matched_name, today_date))
-                                conn.commit()
-                                print(f"✅ Attendance marked for {matched_name} on {today_date}")
-
-                        face_response["faces"].append({
-                            "name": matched_name,
-                            "x": int(x),
-                            "y": int(y),
-                            "w": int(width),
-                            "h": int(height)
-                        })
-
-                    except Exception as e:
-                        print(f"⚠️ Face Recognition Error: {e}")
+                    face_response["faces"].append({
+                        "name": matched_name,
+                        "x": int(x),
+                        "y": int(y),
+                        "w": int(width),
+                        "h": int(height)
+                    })
 
             await websocket.send_text(json.dumps(face_response, default=str))
+            await asyncio.sleep(0.1)  # Rate limit to ~10 FPS
 
         except Exception as e:
             print(f"⚠️ WebSocket Error: {e}")
-            await websocket.send_text(json.dumps({"error": str(e)}, default=str))
+            await websocket.send_text(json.dumps({"error": str(e)}))
+
 
 if __name__ == "__main__":
     import uvicorn
