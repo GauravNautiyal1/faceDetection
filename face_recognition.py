@@ -483,6 +483,8 @@ async def detect_face(websocket: WebSocket, branch: str, semester: str):
             await websocket.send_text(json.dumps({"error": str(e)}))
 
 
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run(app, host="127.0.0.1", port=8000)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))  # Use Railway's assigned port
+    uvicorn.run(app, host="127.0.0.1", port=8000)
+
