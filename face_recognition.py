@@ -310,7 +310,9 @@ cloudinary.config(
     api_key="364559298773626",
     api_secret="Q9wTwNqswx9M8YxsbLxjpfyAONA"
 )
-
+@app.get("/")
+async def root():
+    return {"message": "Face Recognition API is running!"}
 # ✅ Get all registered faces from Cloudinary
 def get_registered_faces(branch, semester):
     try:
